@@ -1,0 +1,181 @@
+#!/bin/csh
+set wrapfilename="pwmat.wrap"
+set maxdepth=5
+
+while ( $#argv != 0 )
+  switch ("$1")
+    case "-h":
+      cat - <<EOF
+runstruct_pwmat [-w file] [-d depth] [-p] [-lu] [-ng] [-nr] [-ex] cmdprefix
+  where file is an optional alternate wrap file (default: pwmat.wrap)
+    If the wrap file is not found in the current directory,
+    it searches in the parent directories, up to number specified by depth (default is 5).
+  -p means preserve pwmat output file
+  -ng means do not generate a pwmat.in file, use the existing one.
+  -nr means do not run pwmat, just generate input files
+  -ex means do not generate pwmat.in, do not run pwmat, but extract info from pwmat output file
+  cmdprefix is the prefix needed for pwmat to run on a remote machine,
+            such as "node -s node2" 
+EOF
+      exit 1
+      breaksw
+    case "-w":
+      set wrapfilename="$2"
+      shift
+    breaksw
+    case "-d":
+      set maxdepth="$2"
+      shift
+    breaksw
+    case "-p":
+      set preservefiles
+    breaksw
+    case "-ng":
+      set notgenpwmatin
+    breaksw;
+    case "-nr":
+      set notrunpwmat
+    breaksw;
+    case "-ex":
+      set extractonly
+    breaksw;
+    default:
+      break;
+  endsw
+  shift
+end
+
+if ( ! $?extractonly ) then 
+
+  if (! $?notgenpwmatin ) then
+    set strout="str_hint.out"
+    if ( ! -e $strout ) then
+      set strout="str.out"
+    endif
+
+    if (! -e $strout ) then
+      echo str.out or str_hint.out does not exist
+      echo NOTE: runstruct_pwmat needs to be run within the subdirectory containing a structure.
+      exit 1
+    endif
+
+    set wrapfile="$wrapfilename"
+    while (! -e $wrapfile && $maxdepth > 0)
+      set wrapfile="../$wrapfile"
+      @ maxdepth--;
+    end
+    if (! -e $wrapfile) then
+      echo You need a $wrapfilename file in one of the directories  ., .. , ../.. , etc.
+      echo NOTE: runstruct_pwmat needs to be run within the numbered subdirectory.
+      exit 1
+    endif
+    cat $strout | cellcvrt -c -sig=9 | tail -n +4 | head -3 > cell.tmp
+    cat $wrapfile >! pwmatin.ini
+    set nbatom=`cat $strout | tail -n +7 | wc -l`
+    grep -iq "^\s*MP_N123" $wrapfile
+    if ( $status == 1 ) then
+        #cat $wrapfile >>! pwmat.in
+        grep -iq "^\s*KPPRA" $wrapfile
+        if ( $status == 1 ) then
+            set kppra=1000
+        else
+            set kppra=`grep -i kppra $wrapfile | sed 's/^.*=//g'`
+        endif
+        cat $wrapfile | grep -vi 'mp_n123' | grep -vi 'kppra' | grep -iv 'dostatic' >! pwmat.in
+        echo "MP_N123 = " `( echo $kppra $nbatom | awk '{print $1/$2}'; cat cell.tmp ) | kmesh -q -r` 0 0 0 >>! pwmat.in
+        cat $strout | cellcvrt -f | tail -n +7 | awk '{print $4}'| sort | uniq |awk '{print "IN.PSP"NR" = "$1".UPF"}' >>! pwmat.in
+    else
+        cat $wrapfile >>! pwmat.in
+        cat $strout | cellcvrt -f | tail -n +7 | awk '{print "IN.PSP"NR" = "$4".UPF"}' >>! pwmat.in
+    endif
+    echo "" >>! pwmat.in
+    echo "" >>! pwmatin.ini
+    echo "[atom.config]" >>! pwmat.in
+    echo "[atom.config]" >>! pwmatin.ini
+    cat $strout | tail -n +7 | wc -l >>! pwmat.in
+    cat $strout | tail -n +7 | wc -l >>! pwmatin.ini
+    echo "LATTICE" >>! pwmat.in
+    echo "LATTICE" >>! pwmatin.ini
+    cat $strout | cellcvrt -c -sig=9 | tail -n +4 | head -3 >>! pwmat.in
+    cat $strout | cellcvrt -c -sig=9 | tail -n +4 | head -3 >>! pwmatin.ini
+    echo "POSITION" >>! pwmat.in
+    echo "POSITION" >>! pwmatin.ini
+    cat $strout | cellcvrt -f | tail -n +7 | awk '{element_names[1]="H"; element_names[2]="He"; element_names[3]="Li"; \
+            element_names[4]="Be"; element_names[5]="B"; element_names[6]="C"; element_names[7]="N"; element_names[8]="O"; \
+            element_names[9]="F"; element_names[10]="Ne"; element_names[11]="Na"; element_names[12]="Mg"; element_names[13]="Al"; \
+            element_names[14]="Si"; element_names[15]="P"; element_names[16]="S"; element_names[17]="Cl"; element_names[18]="Ar"; \
+            element_names[19]="K"; element_names[20]="Ca"; element_names[21]="Sc"; element_names[22]="Ti";element_names[23]="V"; \
+            element_names[24]="Cr"; element_names[25]="Mn"; element_names[26]="Fe"; element_names[27]="Co"; element_names[28]="Ni"; \
+            element_names[29]="Cu"; element_names[30]="Zn"; element_names[31]="Ga"; element_names[32]="Ge"; element_names[33]="As"; \
+            element_names[34]="Se"; element_names[35]="Br"; element_names[36]="Kr"; element_names[37]="Rb"; element_names[38]="Sr"; \
+            element_names[39]="Y"; element_names[40]="Zr"; element_names[41]="Nb"; element_names[42]="Mo"; element_names[43]="Tc"; \
+            element_names[44]="Ru"; element_names[45]="Rh"; element_names[46]="Pd"; element_names[47]="Ag"; element_names[48]="Cd"; \
+            element_names[49]="In"; element_names[50]="Sn"; element_names[51]="Sb"; element_names[52]="Te"; element_names[53]="I"; \
+            element_names[54]="Xe"; element_names[55]="Cs"; element_names[56]="Ba"; element_names[57]="La"; element_names[58]="Ce"; \
+            element_names[59]="Pr"; element_names[60]="Nd"; element_names[61]="Pm"; element_names[62]="Sm"; element_names[63]="Eu"; \
+            element_names[64]="Gd"; element_names[65]="Tb"; element_names[66]="Dy"; element_names[67]="Ho"; element_names[68]="Er"; \
+            element_names[69]="Tm"; element_names[70]="Yb"; element_names[71]="Lu"; element_names[72]="Hf"; element_names[73]="Ta"; \
+            element_names[74]="W"; element_names[75]="Re"; element_names[76]="Os"; element_names[77]="Ir"; element_names[78]="Pt"; \
+            element_names[79]="Au"; element_names[80]="Hg"; element_names[81]="Tl"; element_names[82]="Pb"; element_names[83]="Bi"; \
+            element_names[84]="Po"; element_names[85]="At"; element_names[86]="Rn"; element_names[87]="Fr"; element_names[88]="Ra"; \
+            element_names[89]="Ac"; element_names[90]="Th"; element_names[91]="Pa"; element_names[92]="U"; element_names[93]="Np"; \
+            element_names[94]="Pu"; element_names[95]="Am"; element_names[96]="Cm"; element_names[97]="Bk"; element_names[98]="Cf"; \
+            element_names[99]="Es"; element_names[100]="Fm"; element_names[101]="Md"; element_names[102]="No"; element_names[103]="Lr"; \
+            element_names[104]="Rf"; element_names[105]="Db"; element_names[106]="Sg"; element_names[107]="Bh"; element_names[108]="Hs"; \
+            element_names[109]="Mt"; element_names[110]="Ds"; element_names[111]="Rg"; element_names[112]="Ch";}\
+            {for(i=1;i<=112;i++)if($4==element_names[i])print i,$1,$2,$3,1,1,1;}' >>! pwmat.in
+    cat $strout | cellcvrt -f | tail -n +7 | awk '{element_names[1]="H"; element_names[2]="He"; element_names[3]="Li"; \
+            element_names[4]="Be"; element_names[5]="B"; element_names[6]="C"; element_names[7]="N"; element_names[8]="O"; \
+            element_names[9]="F"; element_names[10]="Ne"; element_names[11]="Na"; element_names[12]="Mg"; element_names[13]="Al"; \
+            element_names[14]="Si"; element_names[15]="P"; element_names[16]="S"; element_names[17]="Cl"; element_names[18]="Ar"; \
+            element_names[19]="K"; element_names[20]="Ca"; element_names[21]="Sc"; element_names[22]="Ti";element_names[23]="V"; \
+            element_names[24]="Cr"; element_names[25]="Mn"; element_names[26]="Fe"; element_names[27]="Co"; element_names[28]="Ni"; \
+            element_names[29]="Cu"; element_names[30]="Zn"; element_names[31]="Ga"; element_names[32]="Ge"; element_names[33]="As"; \
+            element_names[34]="Se"; element_names[35]="Br"; element_names[36]="Kr"; element_names[37]="Rb"; element_names[38]="Sr"; \
+            element_names[39]="Y"; element_names[40]="Zr"; element_names[41]="Nb"; element_names[42]="Mo"; element_names[43]="Tc"; \
+            element_names[44]="Ru"; element_names[45]="Rh"; element_names[46]="Pd"; element_names[47]="Ag"; element_names[48]="Cd"; \
+            element_names[49]="In"; element_names[50]="Sn"; element_names[51]="Sb"; element_names[52]="Te"; element_names[53]="I"; \
+            element_names[54]="Xe"; element_names[55]="Cs"; element_names[56]="Ba"; element_names[57]="La"; element_names[58]="Ce"; \
+            element_names[59]="Pr"; element_names[60]="Nd"; element_names[61]="Pm"; element_names[62]="Sm"; element_names[63]="Eu"; \
+            element_names[64]="Gd"; element_names[65]="Tb"; element_names[66]="Dy"; element_names[67]="Ho"; element_names[68]="Er"; \
+            element_names[69]="Tm"; element_names[70]="Yb"; element_names[71]="Lu"; element_names[72]="Hf"; element_names[73]="Ta"; \
+            element_names[74]="W"; element_names[75]="Re"; element_names[76]="Os"; element_names[77]="Ir"; element_names[78]="Pt"; \
+            element_names[79]="Au"; element_names[80]="Hg"; element_names[81]="Tl"; element_names[82]="Pb"; element_names[83]="Bi"; \
+            element_names[84]="Po"; element_names[85]="At"; element_names[86]="Rn"; element_names[87]="Fr"; element_names[88]="Ra"; \
+            element_names[89]="Ac"; element_names[90]="Th"; element_names[91]="Pa"; element_names[92]="U"; element_names[93]="Np"; \
+            element_names[94]="Pu"; element_names[95]="Am"; element_names[96]="Cm"; element_names[97]="Bk"; element_names[98]="Cf"; \
+            element_names[99]="Es"; element_names[100]="Fm"; element_names[101]="Md"; element_names[102]="No"; element_names[103]="Lr"; \
+            element_names[104]="Rf"; element_names[105]="Db"; element_names[106]="Sg"; element_names[107]="Bh"; element_names[108]="Hs"; \
+            element_names[109]="Mt"; element_names[110]="Ds"; element_names[111]="Rg"; element_names[112]="Ch";}\
+            {for(i=1;i<=112;i++)if($4==element_names[i])print i,$1,$2,$3,1,1,1;}' >>! pwmatin.ini
+  endif
+
+  set notrunpwmatswitch=""
+
+  if ( $?notrunpwmat ) then
+    set notrunpwmatswitch="-n"
+  endif
+
+  if ( $#argv == 0 ) then
+    #single machine mode if no argument
+    ezpwmat $notrunpwmatswitch pwmat.in
+  else
+    #multiple machine mode if argument is remote command
+    ezpwmat $notrunpwmatswitch -p "$* $PWMATCMD" pwmat.in
+  endif
+
+endif
+
+if ( ! $?notrunpwmat ) then
+  extract_pwmat
+  if ( ! $?extractonly ) then
+    if ( ( ! $?preservefiles ) && -e REPORT.static ) then
+      cleanpwmat
+    endif
+    if ( -e REPORT.static || -e REPORT.relax ) then
+      gzip -f `ls -1 REPORT.* | grep -v '.gz$'` >& /dev/null
+    endif
+
+    checkerr_pwmat -e
+  endif
+endif

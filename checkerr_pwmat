@@ -1,0 +1,42 @@
+#!/bin/csh
+set thereiserr=0
+
+if (-e log.static) then
+  foreach errmsg ( "segmen" )
+    grep -i -q $errmsg log.static
+    if ( $status == 0 ) then
+      set thereiserr=1
+    endif
+  end
+endif
+
+if (-e REPORT.static) then
+    grep -i -q 'computation' REPORT.static
+    if ( $status != 0 ) then
+      set thereiserr=1
+    endif
+endif
+
+if (-e RELAXSTEPS.relax) then
+  foreach msg ( "END" )
+    grep -i -q $msg RELAXSTEPS.relax
+    if ( $status != 0 ) then
+      grep -i -q 'computation' REPORT.relax
+      if ( $status == 0 ) then
+          echo "reach the maximum steps of relaxation, still not convergent!" >! error
+      else
+          set thereiserr=1
+      endif
+    endif
+  end
+endif
+
+if ( $thereiserr == 1 && x$1 == "x-e" ) then
+  echo "An error occured during this pwmat run. Check log.static and log.relax for more information." >>! error
+endif
+
+if ( $thereiserr == 1 && x$1 == "x-p" ) then
+  echo Error in `pwd`
+endif
+
+exit $thereiserr

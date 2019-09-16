@@ -1,0 +1,164 @@
+#!/bin/csh
+
+if ( ! -e ~/.ezpwmat.rc ) then
+cat - >! ~/.ezpwmat.rc <<EOF
+#!/bin/bash
+#enter name of pwmat executable here
+set PWMATCMD="PWmat"
+#enter the directories containing the pseudopotentials here
+set PSEUDO="../"
+EOF
+cat - <<EOF
+I have created a default ~/.ezpwmat.rc configuration file for you.
+Please edit it to match your PWmat installation before rerunning ezpwmat.
+EOF
+exit 1
+else
+    source ~/.ezpwmat.rc
+endif
+
+if ( $#argv == 0 ) then
+  echo "Syntax: ezpwmat [-options] input_file"
+  echo "-h: help"
+  echo "-s: do static run afterward"
+  echo "-n: do not run pwmat"
+  echo "-p: specifies the path of PWmat (default: PWmat)"
+  exit 1
+endif
+set pwmatcdb="PWmat"
+foreach option ( $* )
+  if (x$1 == "x-p") then
+    shift
+    set pwmatcdb="$1"
+    shift
+  endif
+  if (x$1 == "x-h") then
+cat - <<EOF
+Syntax: ezpwmat [-c] [-s] [-n] [-p "..."] input_file
+
+-c: Cell patch. This option will convert the cell you entered into a cell that has the symmetry needed for
+    pwmat to work properly. The atom positions are altered correspondingly.
+
+-s: Static run. After the relaxations are completed, this option makes pwmat start again.
+
+-n: do Not run pwmat. If you want to create the input files now and run them later, perhaps on another machine.
+
+-p: path of the PWmat ("PWmat" by default). You can include addition prefix such as:
+    ezpwmat -p PWmat  pwmat.in
+
+Here is an example of input file:
+
+[etot.input]
+4 1
+IN.ATOM = atom.config
+JOB = RELAX
+RELAX_DETAIL = 1 500 0.01
+IN.PSP1 = Si.SG15.NCPP.UPF
+Ecut = 60
+Ecut2 = 240
+KPPRA = 1000
+DOSTATIC
+
+[atom.config]
+ 8 atoms
+Lattice Vector
+ 5.456300    0.000000    0.000000
+ 0.000000    5.456300    0.000000
+ 0.000000    0.000000    5.456300
+Position, move_x, move_y, move_z
+ 14    0.000000000    0.000000000    0.000000000     1  1  1
+ 14    0.000000000    0.500000000    0.500000000     1  1  1
+ 14    0.500000000    0.500000000    0.000000000     1  1  1
+ 14    0.500000000    0.000000000    0.500000000     1  1  1
+ 14    0.749998631    0.250001369    0.749998631     1  1  1
+ 14    0.250001369    0.250001369    0.250001369     1  1  1
+ 14    0.250001369    0.749998631    0.749998631     1  1  1
+ 14    0.749998631    0.749998631    0.250001369     1  1  1
+
+End of example.
+
+EOF
+    exit 1
+  endif
+  if (x$1 == "x-c") then
+    set latvectpatch
+    shift
+  endif
+  if (x$1 == "x-s") then
+    set dostatic
+    shift
+  endif
+  if (x$1 == "x-n") then
+    set norun
+    shift
+  endif
+  if (x$1 == "x-d") then
+    set debug
+    shift
+  endif
+end
+if (! -e $1) then
+  echo Cannot open $1
+  exit 1
+endif
+foreach mysection ( etot.input atom.config )
+  grep -q -i '\['$mysection $1
+  if ( $status == 1 ) then
+    echo "No \[${mysection}\] section in input file."
+    exit 1
+  endif
+end
+sspp < $1 >! pwmatin.tmp
+
+getlines -jaf "\[[Ee][Tt][Oo]" < pwmatin.tmp | getlines -jbf '\\[' | grep -v '^[ 	]*$' >! etot.input
+
+(getlines -jaf "\[[Aa][Tt][Oo]" < pwmatin.tmp | getlines -jbf '\\[') | grep -v '^[ 	]*$' >! atom.config
+
+grep -q -i dostat pwmatin.ini
+if ( $status == 0) then
+  set dostatic
+endif
+
+if (! $?debug ) then
+  rm -f pwmatin.tmp  >& /dev/null
+endif
+
+set pspfiles=`cat pwmat.in | grep -i in.psp | awk -F "=" '{print $2}'`
+foreach pspfile ($pspfiles)
+    cp "$PSEUDO"$pspfile ./
+end
+set NP=`cat etot.input | head -n 1 | awk '{print $1*$2 }'`
+if ( ! $?norun ) then
+  echo | mpirun -np $NP $pwmatcdb >&! log.relax
+  grep -q 'nmap_tot too large' log.relax
+  if ( $status == 0 ) then
+      echo "NMAP_MAX = 500000" >>! etot.input
+      echo | mpirun -np $NP $pwmatcdb >>&! log.relax
+  endif
+  grep -q 'MAGMA ZHEEV Error' log.relax
+  if ( $status == 0 ) then
+      cp final.config atom.config
+      echo | mpirun -np $NP $pwmatcdb >>&! log.relax
+  endif 
+#  cp final.config atom.config
+#  echo | mpirun -np $NP $pwmatcdb >>&! log.relax
+
+  if ($?dostatic) then
+    foreach file (etot.input atom.config REPORT final.config RELAXSTEPS MOVEMENT OUT.FORCE OUT.STRESS OUT.KPT)
+      cp -f $file ${file}.relax
+    end
+    cp -f final.config.relax atom.config
+    cat etot.input.relax | \
+        grep -v -i job | \
+        grep -v -i relax_detail >! etot.input
+    echo "JOB = SCF" >>! etot.input
+    echo "OUT.FORCE=T" >>! etot.input
+    echo "OUT.STRESS=T" >>! etot.input
+    echo | mpirun -np $NP $pwmatcdb >&! log.static
+  endif
+  foreach file (etot.input final.config atom.config REPORT OUT.OCC OUT.FERMI OUT.FORCE OUT.STRESS OUT.KPT)
+    cp -f $file ${file}.static
+  end
+endif
+
+

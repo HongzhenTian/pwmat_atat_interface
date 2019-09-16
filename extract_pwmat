@@ -1,0 +1,93 @@
+#!/bin/csh
+
+foreach tryatomconfig (final.config.static final atom.config.static atom.config )
+  set atomconfig=$tryatomconfig
+  if ( -e $atomconfig ) then
+    break
+  endif
+end
+
+if ( ! -e $atomconfig ) then
+  echo Cannot open final.config.static or final or atom.config.static or atom.config
+  exit 1
+endif
+
+set report=REPORT.static
+
+if ( ! -e $report ) then
+  if ( -e REPORT.static.gz ) then
+    gunzip REPORT.static.gz
+  else
+    set report=REPORT
+  endif
+endif
+
+if ( ! -e $report ) then
+  if ( -e REPORT.gz ) then
+    gunzip REPORT.gz
+  else
+    echo unable to open REPORT.static or REPORT
+    exit 1
+  endif
+endif
+set force=OUT.FORCE.static
+if ( ! -e $force ) then
+    if ( -e OUT.FORCE ) then
+        set force=OUT.FORCE
+    else
+        unable to open OUT.FORCE.static or OUT.FORCE
+    endif
+endif
+    
+
+echo `grep 'E_tot(eV)' $report | tail -n 1 | awk '{print $3}'` >! energy
+#getvalue E_tot < $report | tail -n -1 >! energy
+cat $atomconfig | head -n 5 | tail -n 3 | awk '{print 1*$1,1*$2,1*$3}' >! str_relax.out
+( echo 1 0 0 ; echo 0 1 0 ; echo 0 0 1 ) >> str_relax.out
+set atomnum=`head -n 1 $atomconfig | awk '{print $1}'`
+set lines=`echo "$atomnum+6"|bc`
+head -n $lines $atomconfig | tail -n $atomnum | awk '{element_names[1]="H"; element_names[2]="He"; element_names[3]="Li"; \
+            element_names[4]="Be"; element_names[5]="B"; element_names[6]="C"; element_names[7]="N"; element_names[8]="O"; \
+            element_names[9]="F"; element_names[10]="Ne"; element_names[11]="Na"; element_names[12]="Mg"; element_names[13]="Al"; \
+            element_names[14]="Si"; element_names[15]="P"; element_names[16]="S"; element_names[17]="Cl"; element_names[18]="Ar"; \
+            element_names[19]="K"; element_names[20]="Ca"; element_names[21]="Sc"; element_names[22]="Ti";element_names[23]="V"; \
+            element_names[24]="Cr"; element_names[25]="Mn"; element_names[26]="Fe"; element_names[27]="Co"; element_names[28]="Ni"; \
+            element_names[29]="Cu"; element_names[30]="Zn"; element_names[31]="Ga"; element_names[32]="Ge"; element_names[33]="As"; \
+            element_names[34]="Se"; element_names[35]="Br"; element_names[36]="Kr"; element_names[37]="Rb"; element_names[38]="Sr"; \
+            element_names[39]="Y"; element_names[40]="Zr"; element_names[41]="Nb"; element_names[42]="Mo"; element_names[43]="Tc"; \
+            element_names[44]="Ru"; element_names[45]="Rh"; element_names[46]="Pd"; element_names[47]="Ag"; element_names[48]="Cd"; \
+            element_names[49]="In"; element_names[50]="Sn"; element_names[51]="Sb"; element_names[52]="Te"; element_names[53]="I"; \
+            element_names[54]="Xe"; element_names[55]="Cs"; element_names[56]="Ba"; element_names[57]="La"; element_names[58]="Ce"; \
+            element_names[59]="Pr"; element_names[60]="Nd"; element_names[61]="Pm"; element_names[62]="Sm"; element_names[63]="Eu"; \
+            element_names[64]="Gd"; element_names[65]="Tb"; element_names[66]="Dy"; element_names[67]="Ho"; element_names[68]="Er"; \
+            element_names[69]="Tm"; element_names[70]="Yb"; element_names[71]="Lu"; element_names[72]="Hf"; element_names[73]="Ta"; \
+            element_names[74]="W"; element_names[75]="Re"; element_names[76]="Os"; element_names[77]="Ir"; element_names[78]="Pt"; \
+            element_names[79]="Au"; element_names[80]="Hg"; element_names[81]="Tl"; element_names[82]="Pb"; element_names[83]="Bi"; \
+            element_names[84]="Po"; element_names[85]="At"; element_names[86]="Rn"; element_names[87]="Fr"; element_names[88]="Ra"; \
+            element_names[89]="Ac"; element_names[90]="Th"; element_names[91]="Pa"; element_names[92]="U"; element_names[93]="Np"; \
+            element_names[94]="Pu"; element_names[95]="Am"; element_names[96]="Cm"; element_names[97]="Bk"; element_names[98]="Cf"; \
+            element_names[99]="Es"; element_names[100]="Fm"; element_names[101]="Md"; element_names[102]="No"; element_names[103]="Lr"; \
+            element_names[104]="Rf"; element_names[105]="Db"; element_names[106]="Sg"; element_names[107]="Bh"; element_names[108]="Hs"; \
+            element_names[109]="Mt"; element_names[110]="Ds"; element_names[111]="Rg"; element_names[112]="Ch";}\
+            {print $2,$3,$4,element_names[$1];}' >>! str_relax.out
+
+set lines1=`echo "$atomnum+1"|bc`
+head -n $lines $force | tail -n $atomnum | awk '{print $2,$3,$4}' >! force.out
+set stress=OUT.STRESS.static
+set volume=`cat str_relax.out | cellcvrt -pv`
+set transferunit=`echo "scale=6;$atomnum*160.2*10.0/$volume"|bc`
+cat $stress | head -n 4 | tail -n 3 | awk -v transfer=$transferunit '{print $1*transfer,$2*transfer,$3*transfer}' >! stress.out
+cat OUT.KPT.static | tail -n +3 |awk '{print $4}' >! kweights.tmp
+set numband=`cat $report | grep -i NUM_BAND | awk '{print $3}'`
+set numelect=`cat $report | grep -i NUM_ELECT | awk '{print $3}'`
+set spin=`cat $report | grep -i SPIN | head -n 1 | awk '{print $3}'`
+#echo $numband
+#echo $numelect
+#echo $spin
+cat OUT.OCC.static | getlines -jbt "OCCUPATION" 'KPOINTS' >! eigen.tmp
+echo 501 `sort -n -k 2 eigen.tmp | head -1 | awk '{print $2}' ; sort -n -k 2 eigen.tmp | tail -n -1 | awk '{print $2}'`  $numelect  $spin >! dat.tmp
+
+awk 'BEGIN {getline < "dat.tmp"; Emin=$2; dE=0.05; m=int(($3-$2)/dE)+1; nelec=$4; if (NF==5) {s=$5} else {s=$6}; n=0; tw=0; while (getline < "kweights.tmp") {n++; w[n]=$1;} maxn=n; n=0; for (i=0; i<=m; i++) dos[i]=0;} {if ($1==1) {n++;if (n>maxn) {n=1;}} dos[int(($2-Emin)/dE)]+=(3-s)*w[n]/dE; } END {print nelec,dE,1.; for (i=0; i<=m; i++) {print dos[i];}}' eigen.tmp >! dos.out
+rm -f kweights.tmp eigen.tmp dat.tmp
+
+#cat $outcar | getlines -jbt 'SECOND DERIVATIVES' 'eigenvalues' | sed 's/[0-9]*[XYZ]//g' | grep -v -e '\-\-\-\-' -e '^ *$' >! hessian.out
